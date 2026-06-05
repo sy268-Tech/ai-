@@ -13,7 +13,7 @@
 | 离线可用 | 未配置 API Key 时自动回退内置规则引擎，保证零依赖也能产出初稿 |
 | 多格式输出 | 同时生成 YAML（机器可读）+ 标注【角色】【对话】【环境】的可读剧本文本 |
 | Schema 校验 | 输出自动通过 `screenplay.schema.yaml` 校验，保证字段完整、引用一致 |
-| 无占位标识 | 输出中不含"待作者确认""需确认"等模糊标识，直接给出分析结果 |
+| 美观界面 | 现代化深色标题栏 + 浅色卡片式布局，圆角按钮、状态指示器、进度条、暗色 YAML 编辑器 |
 
 ## 快速开始
 
@@ -32,22 +32,23 @@ pip install -e ".[dev]"
 cp .env.example .env
 # 打开 .env，填入你的 API Key：
 #   LLM_API_KEY=sk-your-real-key
-#   LLM_BASE_URL=https://api.openai.com/v1   (或 DeepSeek/通义千问 等)
-#   LLM_MODEL=gpt-4o-mini
+#   LLM_BASE_URL=https://api.deepseek.com/v1   (或 OpenAI/通义千问 等)
+#   LLM_MODEL=deepseek-chat
 ```
 
 ### 3. 运行
 
-**方式 A：图形界面（PyCharm 右键 Run）**
+**方式 A：图形界面（推荐，PyCharm 右键 Run）**
 
 ```bash
 python main.py
 ```
 
+界面功能：
 - 粘贴 / 打开至少 3 章小说文本
-- 点击「生成剧本」
-- 左侧可读剧本 tab 查看标注了角色/对话/环境的直观展示
-- 右侧 YAML tab 查看结构化输出
+- 点击「✦ 生成剧本」
+- 左侧 Tab 查看标注了【角色】【对话】【环境】的可读剧本
+- 右侧 Tab 查看暗色主题的结构化 YAML 输出
 - 支持保存为 `.yaml` 或 `.txt`
 
 **方式 B：命令行**
@@ -104,7 +105,7 @@ novel2script config
 
 ```
 novel2script_ai/
-├── main.py                 # 图形界面入口
+├── main.py                 # 图形界面入口（现代化 UI）
 ├── .env.example            # 环境变量模板（复制为 .env 填入 API Key）
 ├── pyproject.toml          # 项目配置与依赖
 ├── schemas/
@@ -159,6 +160,18 @@ compiled = graph.compile()
 result = compiled.invoke({})
 ```
 
+## 依赖说明
+
+| 依赖库 | 用途 |
+|--------|------|
+| LangChain | 大模型调用封装、Prompt 模板、结构化输出 |
+| LangGraph | 有向状态图流程编排 |
+| langchain-openai | OpenAI 兼容 API 适配器 |
+| Pydantic | 大模型输出结构约束 |
+| PyYAML | YAML 读写 |
+| jsonschema | Schema 校验 |
+| python-dotenv | .env 环境变量加载 |
+
 ## 设计说明
 
 详见 [docs/screenplay_yaml_schema_design.md](docs/screenplay_yaml_schema_design.md)。
@@ -168,3 +181,4 @@ result = compiled.invoke({})
 - 本项目生成的是"可编辑初稿"，不是最终专业剧本。
 - 作者应重点检查：人物动机、对白口吻、场景节奏、原文是否遗漏。
 - 大模型生成质量取决于所选模型和输入文本质量。
+- 未配置 API Key 时自动使用规则引擎，保证离线可用。
