@@ -97,7 +97,7 @@ def config_command(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="novel2script",
-        description="把 3 章以上的小说自动转换为结构化剧本 YAML（支持 LangChain + LangGraph 大模型）。",
+        description="把小说文本自动转换为结构化剧本 YAML（支持 LangChain + LangGraph 大模型）。",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

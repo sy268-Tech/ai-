@@ -151,7 +151,7 @@ def build_novel_from_text(
     fmt: str = "web_series",
     language: str = "zh-CN",
     genre: Optional[list[str]] = None,
-    min_chapters: int = 3,
+    min_chapters: int = 1,
     config: Optional[LLMConfig] = None,
 ) -> NovelInput:
     """把整段小说文本解析为 NovelInput，并校验至少 ``min_chapters`` 章。

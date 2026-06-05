@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "novel2script-ai"
 version = "0.2.0"
-description = "Convert 3+ novel chapters into structured screenplay YAML using LangChain + LangGraph."
+description = "Convert novel text into structured screenplay YAML using LangChain + LangGraph."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

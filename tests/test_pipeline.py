@@ -45,23 +45,27 @@ def test_convert_example_and_validate():
     assert len(screenplay["script"]["scenes"]) >= 1
 
 
-def test_requires_three_chapters():
+def test_requires_at_least_one_chapter():
+    # 0 章应报错
     data = {
         "novel": {
             "title": "测试",
-            "chapters": [
-                {"chapter_number": 1, "title": "一", "text": "第一章内容"},
-                {"chapter_number": 2, "title": "二", "text": "第二章内容"},
-            ],
+            "chapters": [],
         }
     }
-
     try:
         parse_novel_input(data)
     except ValueError as exc:
-        assert "At least 3 chapters" in str(exc)
+        assert "At least 1 chapter" in str(exc)
     else:
-        raise AssertionError("Expected ValueError for fewer than 3 chapters")
+        raise AssertionError("Expected ValueError for empty chapters")
+
+    # 1 章应正常解析
+    data["novel"]["chapters"] = [
+        {"chapter_number": 1, "title": "一", "text": "单章内容"},
+    ]
+    novel = parse_novel_input(data)
+    assert len(novel.chapters) == 1
 
 
 def test_split_chapters_from_text():
@@ -72,12 +76,17 @@ def test_split_chapters_from_text():
 
 
 def test_build_novel_from_text_min_chapters():
+    # 1 章（带章节标题）应正常解析
+    novel = build_novel_from_text("第一章\n只有一章", title="x")
+    assert len(novel.chapters) == 1
+
+    # 空文本应报错
     try:
-        build_novel_from_text("第一章\n只有一章", title="x")
+        build_novel_from_text("", title="x")
     except ValueError as exc:
         assert "至少需要" in str(exc)
     else:
-        raise AssertionError("Expected ValueError for fewer than 3 chapters")
+        raise AssertionError("Expected ValueError for empty text")
 
 
 def test_convert_text_rule_based_validates():

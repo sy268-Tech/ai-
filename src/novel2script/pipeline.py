@@ -60,8 +60,8 @@ def parse_novel_input(data: dict[str, Any]) -> NovelInput:
     chapters_raw = raw.get("chapters", [])
     if not isinstance(chapters_raw, list):
         raise ValueError("'novel.chapters' must be a list.")
-    if len(chapters_raw) < 3:
-        raise ValueError("At least 3 chapters are required.")
+    if len(chapters_raw) < 1:
+        raise ValueError("At least 1 chapter is required.")
 
     chapters: list[NovelChapter] = []
     for item in chapters_raw:

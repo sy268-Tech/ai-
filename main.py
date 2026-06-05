@@ -2,7 +2,7 @@
 Novel2Script AI - 图形界面入口（PyCharm 右键 Run 即可）
 
 功能：
-1. 粘贴 / 打开至少 3 章小说文本。
+1. 粘贴 / 打开小说文本（支持单章或多章）。
 2. 一键转换为结构化剧本 YAML，并同时给出标注【角色】【对话】【环境】的可读剧本。
 3. 大模型由 LangChain + LangGraph 驱动；在项目根目录 .env 中填入 LLM_API_KEY 即可启用，
    未配置时自动回退到内置规则引擎，保证离线也能出稿。
@@ -169,7 +169,7 @@ class Novel2ScriptApp:
         self.author_var = tk.StringVar(value="示例作者")
         self.format_var = tk.StringVar(value="web_series")
         self.use_llm_var = tk.BooleanVar(value=self.config.is_configured)
-        self.status_var = tk.StringVar(value="就绪 · 请粘贴至少 3 章小说文本，然后点击「生成剧本」")
+        self.status_var = tk.StringVar(value="就绪 · 请粘贴小说文本，然后点击「生成剧本」")
 
         self._setup_styles()
         self._build_ui()
@@ -288,7 +288,7 @@ class Novel2ScriptApp:
             font=("Microsoft YaHei UI", 11, "bold"),
         ).pack(side=tk.LEFT)
         tk.Label(
-            left_header, text="至少 3 段，支持多种分隔：第X章 / Scene 1 / Chat1 / 1. 标题 / ---",
+            left_header, text="支持多种分隔：第X章 / Scene 1 / Chat1 / 1. 标题 / ---，也可单章直接转换",
             bg=Colors.CARD_BG, fg=Colors.TEXT_LIGHT,
             font=("Microsoft YaHei UI", 8),
         ).pack(side=tk.LEFT, padx=12)
