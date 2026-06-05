@@ -42,9 +42,91 @@ class ScriptGenerator(ABC):
     def generate(self, novel: NovelInput, options: ConvertOptions) -> ScreenplayYaml:
         raise NotImplementedError
 
+    def extend(
+        self,
+        screenplay: ScreenplayYaml,
+        new_text: str,
+        options: ConvertOptions,
+    ) -> ScreenplayYaml:
+        """续写已有剧本——在现有角色/地点/场景基础上追加新内容。
 
-# 占位类已删除：历史版本的 LLMGeneratorPlaceholder 不再需要。
-# 大模型生成请直接使用 LangGraphScriptGenerator。
+        默认实现：把新文本当作独立章节跑一遍 generate，再合并。
+        子类可覆盖以提供更智能的续写（如利用前情提要做上下文）。
+        """
+        from .models import NovelChapter, NovelInput
+
+        script = screenplay.get("script", {})
+        old_chars = script.get("characters", [])
+        old_locs = script.get("locations", [])
+        old_scenes = script.get("scenes", [])
+
+        # 把新文本构造成一个临时章节
+        new_chapter = NovelChapter(
+            chapter_number=len(script.get("source", {}).get("adapted_chapters", [])) + 1,
+            title="续写",
+            text=new_text.strip(),
+        )
+        novel = NovelInput(
+            title=script.get("title", "续写剧本"),
+            author=script.get("source", {}).get("author"),
+            chapters=[new_chapter],
+            format=script.get("format", options.default_format),
+            language=script.get("language", "zh-CN"),
+        )
+
+        new_screenplay = self.generate(novel, options)
+        new_script = new_screenplay.get("script", {})
+
+        # 合并角色（按 name 去重）
+        merged_chars = list(old_chars)
+        old_char_names = {c.get("name", "") for c in old_chars}
+        for c in new_script.get("characters", []):
+            if c.get("name") and c["name"] not in old_char_names:
+                merged_chars.append(c)
+                old_char_names.add(c["name"])
+
+        # 合并地点（按 name 去重）
+        merged_locs = list(old_locs)
+        old_loc_names = {l.get("name", "") for l in old_locs}
+        for l in new_script.get("locations", []):
+            if l.get("name") and l["name"] not in old_loc_names:
+                merged_locs.append(l)
+                old_loc_names.add(l["name"])
+
+        # 合并场景（续编编号）
+        max_scene_no = max((s.get("scene_number", 0) for s in old_scenes), default=0)
+        merged_scenes = list(old_scenes)
+        for s in new_script.get("scenes", []):
+            max_scene_no += 1
+            s["scene_number"] = max_scene_no
+            s["id"] = f"scene_{max_scene_no:03d}"
+            merged_scenes.append(s)
+
+        # 更新来源
+        adapted = list(script.get("source", {}).get("adapted_chapters", []))
+        adapted.append(new_chapter.chapter_number)
+
+        return {
+            "schema_version": screenplay.get("schema_version", "1.0"),
+            "script": {
+                **script,
+                "source": {
+                    **script.get("source", {}),
+                    "adapted_chapters": adapted,
+                    "source_note": script.get("source", {}).get("source_note", "")
+                    + "（包含续写内容）",
+                },
+                "metadata": {
+                    **script.get("metadata", {}),
+                    "draft_type": "ai_extended_draft",
+                },
+                "characters": merged_chars,
+                "locations": merged_locs,
+                "scenes": merged_scenes,
+                "notes": script.get("notes", [])
+                + [f"续写：追加了 {len(new_script.get('scenes', []))} 个场景。"],
+            },
+        }
 
 
 # ── 共享的剧本组装辅助 ──────────────────────────────────────────
@@ -214,6 +296,256 @@ class LangGraphScriptGenerator(ScriptGenerator):
             },
         }
         return screenplay
+
+    # ── 续写：在已有剧本基础上追加新场景（LLM 增强版）───────────
+
+    def extend(
+        self,
+        screenplay: ScreenplayYaml,
+        new_text: str,
+        options: ConvertOptions,
+    ) -> ScreenplayYaml:
+        """用大模型智能续写剧本——携带前情提要、已有角色和地点作为上下文。
+
+        流程：
+        1. 从已有剧本提取角色/地点/最近场景摘要作为上下文
+        2. 调用 LLM 为新文本生成场景（同时自动补全角色/地点）
+        3. 合并新旧内容，场景编号无缝接续
+        """
+        if not self.config.is_configured:
+            # 未配置 Key 时回退基类默认合并逻辑
+            return super().extend(screenplay, new_text, options)
+
+        from langchain_core.prompts import ChatPromptTemplate
+
+        from .llm_schemas import LLMSceneList, LLMBeatList
+
+        script = screenplay.get("script", {})
+        old_chars = script.get("characters", [])
+        old_locs = script.get("locations", [])
+        old_scenes = script.get("scenes", [])
+
+        # 构造上下文摘要
+        char_names = "、".join(c.get("name", "") for c in old_chars) or "（暂无已知角色）"
+        loc_names = "、".join(l.get("name", "") for l in old_locs) or "（暂无已知地点）"
+
+        # 最近几个场景的摘要
+        recent_count = min(3, len(old_scenes))
+        recent_summaries = "\n".join(
+            f"- 场景{s.get('scene_number', i)}：{s.get('summary', '（无摘要）')}"
+            for i, s in enumerate(old_scenes[-recent_count:], start=1)
+        ) if old_scenes else "（这是剧本的开头，前面没有场景）"
+
+        max_scene_no = max((s.get("scene_number", 0) for s in old_scenes), default=0)
+
+        # 将新文本加上段号
+        paragraphs = split_paragraphs(new_text)
+        numbered = "\n".join(f"[{i}] {p}" for i, p in enumerate(paragraphs))
+
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", _SYS_ANALYST),
+            ("human", _EXTEND_SCENE_PROMPT),
+        ])
+        chain = prompt | self._structured(LLMSceneList)
+
+        try:
+            result: LLMSceneList = chain.invoke({
+                "character_names": char_names,
+                "location_names": loc_names,
+                "recent_summaries": recent_summaries,
+                "numbered_paragraphs": numbered,
+            })
+            llm_scenes = result.scenes
+        except Exception:
+            llm_scenes = []
+
+        if not llm_scenes:
+            # 兜底：段落组切分
+            size = max(1, options.max_paragraphs_per_scene)
+            from .llm_schemas import LLMScene
+            llm_scenes = [
+                LLMScene(
+                    summary=summarize_text("\n".join(paragraphs[i:i + size]), 60),
+                    paragraph_ranges=[[i, min(i + size, len(paragraphs)) - 1]],
+                )
+                for i in range(0, len(paragraphs), size)
+            ]
+
+        # 用节拍抽取为每个场景生成 beats
+        beat_prompt = ChatPromptTemplate.from_messages([
+            ("system", _SYS_ANALYST),
+            ("human", _BEAT_PROMPT),
+        ])
+        beat_chain = beat_prompt | self._structured(LLMBeatList)
+
+        name_to_id = {c["name"]: c["id"] for c in old_chars}
+        valid_types = {"action", "dialogue", "narration", "sound", "visual"}
+
+        new_scenes: list[dict[str, Any]] = []
+        new_char_names: dict[str, str] = {}  # name -> id
+        new_loc_names: dict[str, str] = {}   # name -> id
+
+        for sc in llm_scenes:
+            max_scene_no += 1
+            scene_paras: list[str] = []
+            for rng in (sc.paragraph_ranges or []):
+                if len(rng) >= 2:
+                    start, end = int(rng[0]), int(rng[1])
+                    scene_paras.extend(paragraphs[start:end + 1])
+            if not scene_paras:
+                scene_paras = paragraphs
+            scene_text = "\n".join(scene_paras)
+
+            # 匹配地点（优先已有地点，其次新建临时地点）
+            loc_name = (sc.location or "").strip()
+            location = self._match_location(loc_name, scene_text, old_locs)
+            if not location and loc_name and loc_name not in new_loc_names:
+                new_loc_id = slugify_id("loc", loc_name)
+                new_loc_names[loc_name] = new_loc_id
+                location = {
+                    "id": new_loc_id,
+                    "name": loc_name,
+                    "type": "unknown",
+                    "description": f"续写中新增的地点：{loc_name}。",
+                    "atmosphere": _placeholder_to_empty(str(sc.atmosphere or "")),
+                    "source_chapters": [],
+                }
+            if not location:
+                location = {"id": "loc_unspecified", "name": "未明确地点", "type": "unknown"}
+
+            # 提取节拍
+            beats: list[dict[str, Any]] = []
+            try:
+                beat_result: LLMBeatList = beat_chain.invoke({
+                    "character_names": char_names,
+                    "scene_text": scene_text,
+                })
+                llm_beats = beat_result.beats
+            except Exception:
+                llm_beats = []
+
+            for b in llm_beats:
+                btype = (b.type or "action").strip()
+                if btype not in valid_types:
+                    btype = "action"
+                text = (b.text or "").strip()
+                if not text:
+                    continue
+                beat: dict[str, Any] = {"type": btype, "text": text}
+                if btype == "dialogue":
+                    speaker = (b.speaker or "").strip()
+                    cid = name_to_id.get(speaker)
+                    if not cid:
+                        for nm, _id in name_to_id.items():
+                            if nm and (nm in speaker or speaker in nm):
+                                cid = _id
+                                break
+                    if not cid:
+                        # 新角色：临时分配 id
+                        if speaker and speaker not in new_char_names:
+                            cid = slugify_id("char", speaker)
+                            new_char_names[speaker] = cid
+                        elif speaker:
+                            cid = new_char_names[speaker]
+                        elif name_to_id:
+                            cid = next(iter(name_to_id.values()))
+                    beat["character_id"] = cid
+                    beat["character_name"] = speaker or next(
+                        (n for n, i in name_to_id.items() if i == cid), speaker
+                    )
+                beats.append(beat)
+
+            if not beats:
+                beats.append({
+                    "type": "action",
+                    "text": summarize_text(scene_text, 120) or scene.get("summary", "（无内容）"),
+                })
+
+            tod = (sc.time_of_day or "").strip() or guess_time_of_day(scene_text)
+            ie = (sc.interior_exterior or "").strip() or guess_interior_exterior(scene_text)
+
+            new_scenes.append({
+                "id": f"scene_{max_scene_no:03d}",
+                "scene_number": max_scene_no,
+                "source_chapters": [],
+                "heading": {
+                    "location_id": location["id"],
+                    "location_name": location["name"],
+                    "time_of_day": tod,
+                    "interior_exterior": ie,
+                    "atmosphere": _placeholder_to_empty(str(sc.atmosphere or ""))
+                    or location.get("atmosphere", ""),
+                },
+                "dramatic_function": (sc.dramatic_function or "推进剧情").strip(),
+                "summary": (sc.summary or "").strip() or summarize_text(scene_text, 80),
+                "characters": list({
+                    bid.get("character_id", "")
+                    for bid in beats
+                    if bid.get("type") == "dialogue" and bid.get("character_id")
+                }) or [next(iter(name_to_id.values()))] if name_to_id else [],
+                "beats": beats,
+                "transition": "CUT_TO",
+                "notes": ["续写场景。"],
+            })
+
+        # 合并角色
+        merged_chars = list(old_chars)
+        old_char_names = {c.get("name", "") for c in old_chars}
+        for name, cid in new_char_names.items():
+            if name not in old_char_names:
+                merged_chars.append({
+                    "id": cid,
+                    "name": name,
+                    "role": "supporting",
+                    "description": f"续写中新增的角色：{name}。",
+                    "source_chapters": [],
+                })
+                old_char_names.add(name)
+                name_to_id[name] = cid
+
+        # 合并地点
+        merged_locs = list(old_locs)
+        old_loc_names = {l.get("name", "") for l in old_locs}
+        for name, lid in new_loc_names.items():
+            if name not in old_loc_names:
+                merged_locs.append({
+                    "id": lid,
+                    "name": name,
+                    "type": "unknown",
+                    "description": f"续写中新增的地点：{name}。",
+                    "atmosphere": "",
+                    "source_chapters": [],
+                })
+
+        # 合并场景
+        merged_scenes = list(old_scenes) + new_scenes
+
+        # 更新来源
+        adapted = list(script.get("source", {}).get("adapted_chapters", []))
+        adapted.append(adapted[-1] + 1 if adapted else 1)
+
+        return {
+            "schema_version": screenplay.get("schema_version", "1.0"),
+            "script": {
+                **script,
+                "source": {
+                    **script.get("source", {}),
+                    "adapted_chapters": adapted,
+                    "source_note": script.get("source", {}).get("source_note", "")
+                    + "（包含 LLM 智能续写内容）",
+                },
+                "metadata": {
+                    **script.get("metadata", {}),
+                    "draft_type": "ai_extended_draft",
+                    "generator": f"LangGraphScriptGenerator ({self.config.model}) + extend",
+                },
+                "characters": merged_chars,
+                "locations": merged_locs,
+                "scenes": merged_scenes,
+                "notes": script.get("notes", [])
+                + [f"续写：LLM 智能追加了 {len(new_scenes)} 个场景。新角色 {len(new_char_names)} 人，新地点 {len(new_loc_names)} 处。"],
+            },
+        }
 
     # ── 节点 1：角色识别 ────────────────────────────────────
 
@@ -577,4 +909,25 @@ _BEAT_PROMPT = """请把下面这一个场景的文字改写成有序的剧本�
 
 场景文字：
 {scene_text}
+"""
+
+_EXTEND_SCENE_PROMPT = """你正在为一部已有剧本写续集。请把下面的新小说文本切分成剧本场景。
+
+前情提要（最近已完成的场景）：
+{recent_summaries}
+
+已存在的角色：{character_names}
+已出现的地点：{location_names}
+
+切分原则：
+1. 时间或地点发生明显变化时切分为新场景。
+2. 出现明显戏剧转折或视角切换时切分。
+3. 延续前情的叙事风格和节奏。
+4. 为每个场景标注地点、时间(morning/day/afternoon/evening/night/dawn/dusk/continuous/unknown)、
+   内外景(INT/EXT/INT_EXT/UNKNOWN)、环境氛围、一句话摘要、戏剧功能、在场角色，
+   以及覆盖的段落区间 paragraph_ranges（形如 [[起始段号, 结束段号]]）。
+5. 新出现的角色请直接标注姓名，新地点请给出描述性名称。
+
+带段号的续写文本：
+{numbered_paragraphs}
 """

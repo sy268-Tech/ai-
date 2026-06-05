@@ -29,7 +29,7 @@ if SRC.exists() and str(SRC) not in sys.path:
 
 from novel2script.config import LLMConfig
 from novel2script.models import ConvertOptions
-from novel2script.service import build_novel_from_text, convert_novel
+from novel2script.service import build_novel_from_text, convert_novel, extend_screenplay
 from novel2script.renderer import render_readable_script
 from novel2script.yaml_io import dump_yaml
 
@@ -256,6 +256,12 @@ class Novel2ScriptApp:
             font_size=10,
         )
         self.convert_btn.pack(side=tk.LEFT, padx=4)
+        self.extend_btn = RoundedButton(
+            btn_frame, text="✦ 续写剧本", command=self.extend_script,
+            width=120, height=34, bg=Colors.ACCENT, hover_bg="#7c3aed",
+            font_size=10,
+        )
+        self.extend_btn.pack(side=tk.LEFT, padx=4)
         RoundedButton(btn_frame, text="保存 YAML", command=self.save_yaml,
                       width=100, height=32, bg=Colors.SUCCESS, hover_bg="#059669",
                       font_size=9).pack(side=tk.LEFT, padx=4)
@@ -420,6 +426,77 @@ class Novel2ScriptApp:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def extend_script(self) -> None:
+        """续写剧本——在已有剧本基础上追加新场景。"""
+        if self.last_screenplay is None:
+            messagebox.showwarning("没有可续写的剧本", "请先生成或加载一份剧本，然后再点击「续写剧本」。")
+            return
+
+        new_text = self.input_text.get("1.0", tk.END).strip()
+        if not new_text:
+            messagebox.showwarning("文本为空", "请在输入区粘贴续写内容，然后点击「续写剧本」。")
+            return
+
+        prefer_llm = bool(self.use_llm_var.get() and self.config.is_configured)
+        engine = "大模型续写" if prefer_llm else "规则引擎续写"
+        self.status_var.set(f"⏳ 正在用{engine}续写剧本，请稍候…")
+        self.progress.pack(fill=tk.X, padx=12, pady=(0, 4))
+        self.progress.start(15)
+        self.convert_btn.set_disabled(True)
+        self.extend_btn.set_disabled(True)
+
+        old_scene_count = len(self.last_screenplay.get("script", {}).get("scenes", []))
+        old_char_count = len(self.last_screenplay.get("script", {}).get("characters", []))
+
+        def worker() -> None:
+            try:
+                options = ConvertOptions(default_format=self.format_var.get())
+                screenplay, used_llm = extend_screenplay(
+                    self.last_screenplay,
+                    new_text,
+                    prefer_llm=prefer_llm,
+                    options=options,
+                )
+                yaml_out = dump_yaml(screenplay)
+                readable = render_readable_script(screenplay)
+                self.root.after(
+                    0, self._on_extend_success,
+                    screenplay, yaml_out, readable, used_llm,
+                    old_scene_count, old_char_count,
+                )
+            except Exception as exc:
+                self.root.after(0, self._on_error, exc)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_extend_success(
+        self, screenplay: dict, yaml_out: str, readable: str,
+        used_llm: bool, old_scene_count: int, old_char_count: int,
+    ) -> None:
+        self.progress.stop()
+        self.progress.pack_forget()
+        self.last_screenplay = screenplay
+        self.readable_text.delete("1.0", tk.END)
+        self.readable_text.insert("1.0", readable)
+        self.yaml_text.delete("1.0", tk.END)
+        self.yaml_text.insert("1.0", yaml_out)
+        self.tabs.select(0)
+        self.convert_btn.set_disabled(False)
+        self.extend_btn.set_disabled(False)
+
+        scene_count = len(screenplay.get("script", {}).get("scenes", []))
+        char_count = len(screenplay.get("script", {}).get("characters", []))
+        new_scenes = scene_count - old_scene_count
+        new_chars = char_count - old_char_count
+        self.scene_count_label.config(text=f"{char_count} 角色 · {scene_count} 场景")
+
+        engine = "大模型续写 (LangChain+LangGraph)" if used_llm else "规则引擎续写"
+        note = f"（续写新增 {new_scenes} 场景"
+        if new_chars > 0:
+            note += f"，{new_chars} 新角色"
+        note += "）"
+        self.status_var.set(f"✅ 续写完成 · {engine}{note} · 现共 {scene_count} 个场景")
+
     def _on_success(self, screenplay: dict, yaml_out: str, readable: str, used_llm: bool) -> None:
         self.progress.stop()
         self.progress.pack_forget()
@@ -443,6 +520,7 @@ class Novel2ScriptApp:
         self.progress.stop()
         self.progress.pack_forget()
         self.convert_btn.set_disabled(False)
+        self.extend_btn.set_disabled(False)
         messagebox.showerror("生成失败", str(exc))
         self.status_var.set(f"❌ 生成失败：{exc}")
 

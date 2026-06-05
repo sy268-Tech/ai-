@@ -279,3 +279,35 @@ def convert_text(
         generator_name=generator_name,
         used_llm=used_llm,
     )
+
+
+def extend_screenplay(
+    screenplay: ScreenplayYaml,
+    new_text: str,
+    *,
+    prefer_llm: bool = True,
+    options: Optional[ConvertOptions] = None,
+    config: Optional[LLMConfig] = None,
+) -> tuple[ScreenplayYaml, bool]:
+    """在已有剧本基础上续写新内容。
+
+    Args:
+        screenplay: 已有的剧本 dict（来自 convert_novel 或之前续写的输出）
+        new_text: 续写的新文本
+        prefer_llm: 是否优先使用大模型（配置了 Key 时生效）
+        options: 转换选项
+        config: LLM 配置
+
+    Returns:
+        (extended_screenplay, used_llm): 续写后的完整剧本和是否使用了大模型
+    """
+    options = options or ConvertOptions()
+    generator, used_llm = choose_generator(prefer_llm=prefer_llm, config=config)
+
+    if used_llm:
+        try:
+            return generator.extend(screenplay, new_text, options), True
+        except Exception:
+            # LLM 调用失败时回退规则版
+            return RuleBasedGenerator().extend(screenplay, new_text, options), False
+    return generator.extend(screenplay, new_text, options), False
