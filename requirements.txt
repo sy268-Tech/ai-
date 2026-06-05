@@ -1,0 +1,10 @@
+# Novel2Script AI 依赖
+# 安装：pip install -r requirements.txt
+
+PyYAML>=6.0.1
+jsonschema>=4.22.0
+python-dotenv>=1.0.0
+langchain>=0.3
+langgraph>=0.2
+langchain-openai>=0.2
+pydantic>=2.7

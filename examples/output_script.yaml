@@ -1,0 +1,181 @@
+schema_version: '1.0'
+script:
+  title: 雾城来信
+  format: web_series
+  language: zh-CN
+  genre:
+  - suspense
+  logline: 围绕《雾城来信》展开的故事从“夜色落下时，林夏来到废弃的火车站。站台上全是雾，远处的灯像被水泡过一样模糊。 林夏说：“是谁让我来这里？” 一阵风吹过…”开始，人物被迫面对逐渐升级的冲突。
+  synopsis: 第1章：夜色落下时，林夏来到废弃的火车站。站台上全是雾，远处的灯像被水泡过一样模糊。 林夏说：“是谁让我来这里？” 一阵风吹过，候车厅的铁门发出刺… 第2章：第二天上午，林夏回到办公室。桌上多了一封没有署名的信，信纸边缘被雨水泡皱。
+    顾言问：“你脸色怎么这么差？” 林夏没有回答。她打开信，里面只… 第3章：深夜，林夏按照照片上的地址来到一条狭窄的巷子。巷子尽头有一间亮着灯的旧屋。 门内传来老人咳嗽的声音。林夏刚要敲门，屋里的灯忽然灭了。
+    顾言…
+  source:
+    novel_title: 雾城来信
+    author: 示例作者
+    adapted_chapters:
+    - 1
+    - 2
+    - 3
+    source_note: 由 Novel2Script AI 根据小说章节自动生成的剧本初稿。
+  metadata:
+    draft_type: ai_first_draft
+    generator: RuleBasedGenerator
+    warning: 规则生成结果仅作为可编辑初稿，建议作者继续打磨。
+  characters:
+  - id: char_e81946cb
+    name: 林夏
+    role: protagonist
+    age: ''
+    gender: ''
+    description: 从原文对白或动作中识别出的人物：林夏。
+    goal: ''
+    conflict: ''
+    relationships: []
+    source_chapters:
+    - 1
+    - 2
+  - id: char_562390a5
+    name: 顾言
+    role: supporting
+    age: ''
+    gender: ''
+    description: 从原文对白或动作中识别出的人物：顾言。
+    goal: ''
+    conflict: ''
+    relationships: []
+    source_chapters:
+    - 2
+    - 3
+  locations:
+  - id: loc_4bb20c41
+    name: 火车站
+    type: exterior
+    description: 从小说章节中识别出的地点：火车站。
+    atmosphere: 紧张、悬疑
+    source_chapters:
+    - 1
+  - id: loc_9726ca98
+    name: 车站
+    type: exterior
+    description: 从小说章节中识别出的地点：车站。
+    atmosphere: 紧张、悬疑
+    source_chapters:
+    - 1
+  - id: loc_e990bc8c
+    name: 站台
+    type: exterior
+    description: 从小说章节中识别出的地点：站台。
+    atmosphere: 紧张、悬疑
+    source_chapters:
+    - 1
+  - id: loc_93cfc1e1
+    name: 办公室
+    type: interior
+    description: 从小说章节中识别出的地点：办公室。
+    atmosphere: 紧张、悬疑
+    source_chapters:
+    - 2
+  - id: loc_e2f26531
+    name: 巷子
+    type: interior
+    description: 从小说章节中识别出的地点：巷子。
+    atmosphere: ''
+    source_chapters:
+    - 3
+  scenes:
+  - id: scene_001
+    scene_number: 1
+    source_chapters:
+    - 1
+    heading:
+      location_id: loc_4bb20c41
+      location_name: 火车站
+      time_of_day: night
+      interior_exterior: EXT
+      atmosphere: 紧张、悬疑
+    dramatic_function: 开场，建立人物与悬念
+    summary: 夜色落下时，林夏来到废弃的火车站。站台上全是雾，远处的灯像被水泡过一样模糊。 林夏说：“是谁让我来这里？” 一阵风吹过，候车厅的铁门发出刺耳的响声。她握紧手机，屏幕上只有一条陌生短信：午夜十二点，旧…
+    characters:
+    - char_e81946cb
+    beats:
+    - type: action
+      text: 夜色落下时，林夏来到废弃的火车站。站台上全是雾，远处的灯像被水泡过一样模糊。
+      source_text_ref: 夜色落下时，林夏来到废弃的火车站。站台上全是雾，远处的灯像被水泡过一样模糊。
+    - type: dialogue
+      character_id: char_e81946cb
+      character_name: 林夏
+      text: 是谁让我来这里？
+      source_text_ref: 林夏说：“是谁让我来这里？”
+    - type: dialogue
+      character_id: char_e81946cb
+      character_name: 林夏
+      text: 午夜十二点，旧站台见
+      source_text_ref: 一阵风吹过，候车厅的铁门发出刺耳的响声。她握紧手机，屏幕上只有一条陌生短信：午夜十二点，旧站台见。
+    transition: CUT_TO
+    notes:
+    - 来源：第1章《第一章 旧站台》。
+  - id: scene_002
+    scene_number: 2
+    source_chapters:
+    - 2
+    heading:
+      location_id: loc_93cfc1e1
+      location_name: 办公室
+      time_of_day: morning
+      interior_exterior: INT
+      atmosphere: 紧张、悬疑
+    dramatic_function: 推动事件升级
+    summary: 第二天上午，林夏回到办公室。桌上多了一封没有署名的信，信纸边缘被雨水泡皱。 顾言问：“你脸色怎么这么差？” 林夏没有回答。她打开信，里面只有一张旧照片，照片背面写着：别相信你父亲。
+    characters:
+    - char_e81946cb
+    - char_562390a5
+    beats:
+    - type: action
+      text: 第二天上午，林夏回到办公室。桌上多了一封没有署名的信，信纸边缘被雨水泡皱。
+      source_text_ref: 第二天上午，林夏回到办公室。桌上多了一封没有署名的信，信纸边缘被雨水泡皱。
+    - type: dialogue
+      character_id: char_562390a5
+      character_name: 顾言
+      text: 你脸色怎么这么差？
+      source_text_ref: 顾言问：“你脸色怎么这么差？”
+    - type: dialogue
+      character_id: char_e81946cb
+      character_name: 林夏
+      text: 别相信你父亲
+      source_text_ref: 林夏没有回答。她打开信，里面只有一张旧照片，照片背面写着：别相信你父亲。
+    transition: CUT_TO
+    notes:
+    - 来源：第2章《第二章 匿名信》。
+  - id: scene_003
+    scene_number: 3
+    source_chapters:
+    - 3
+    heading:
+      location_id: loc_e2f26531
+      location_name: 巷子
+      time_of_day: night
+      interior_exterior: INT
+      atmosphere: ''
+    dramatic_function: 制造转折或揭示新线索
+    summary: 深夜，林夏按照照片上的地址来到一条狭窄的巷子。巷子尽头有一间亮着灯的旧屋。 门内传来老人咳嗽的声音。林夏刚要敲门，屋里的灯忽然灭了。 顾言低声说：“我们可能被人跟踪了。”
+    characters:
+    - char_e81946cb
+    - char_562390a5
+    beats:
+    - type: action
+      text: 深夜，林夏按照照片上的地址来到一条狭窄的巷子。巷子尽头有一间亮着灯的旧屋。
+      source_text_ref: 深夜，林夏按照照片上的地址来到一条狭窄的巷子。巷子尽头有一间亮着灯的旧屋。
+    - type: sound
+      text: 门内传来老人咳嗽的声音。林夏刚要敲门，屋里的灯忽然灭了。
+      source_text_ref: 门内传来老人咳嗽的声音。林夏刚要敲门，屋里的灯忽然灭了。
+    - type: dialogue
+      character_id: char_562390a5
+      character_name: 顾言
+      text: 我们可能被人跟踪了。
+      source_text_ref: 顾言低声说：“我们可能被人跟踪了。”
+    transition: CUT_TO
+    notes:
+    - 来源：第3章《第三章 夜访》。
+  notes:
+  - 请检查人物目标、动机、对白口吻和场景节奏。
+  - 如果接入大模型，可在 adapters.py 中替换生成器以提升改编质量。
