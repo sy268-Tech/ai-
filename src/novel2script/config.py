@@ -42,7 +42,7 @@ def load_env(env_path: str | Path | None = None) -> None:
     except ImportError:
         return
     if path.exists():
-        load_dotenv(dotenv_path=path, override=False)
+        load_dotenv(dotenv_path=str(path), override=True)
 
 
 def _get_float(name: str, default: float) -> float:
