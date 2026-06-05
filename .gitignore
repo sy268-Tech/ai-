@@ -15,6 +15,7 @@ build/
 
 # 生成产物
 *_readable.txt
+demo/output/
 
 # IDE
 .idea/

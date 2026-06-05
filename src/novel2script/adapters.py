@@ -121,8 +121,12 @@ class LangGraphScriptGenerator(ScriptGenerator):
         return self._llm
 
     def _structured(self, schema):
-        """返回一个绑定了结构化输出 schema 的可调用链。"""
-        return self._get_llm().with_structured_output(schema)
+        """返回一个绑定了结构化输出 schema 的可调用链。
+
+        使用 function_calling 方法以兼容 DeepSeek 等不支持
+        response_format: json_schema 的 API 提供商。
+        """
+        return self._get_llm().with_structured_output(schema, method="function_calling")
 
     # ── 图构建 ──────────────────────────────────────────────
 
