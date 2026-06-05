@@ -288,7 +288,7 @@ class Novel2ScriptApp:
             font=("Microsoft YaHei UI", 11, "bold"),
         ).pack(side=tk.LEFT)
         tk.Label(
-            left_header, text="至少 3 章，用「第一章 / 第二章…」标题分隔",
+            left_header, text="至少 3 段，支持多种分隔：第X章 / Scene 1 / Chat1 / 1. 标题 / ---",
             bg=Colors.CARD_BG, fg=Colors.TEXT_LIGHT,
             font=("Microsoft YaHei UI", 8),
         ).pack(side=tk.LEFT, padx=12)
@@ -409,7 +409,7 @@ class Novel2ScriptApp:
 
         def worker() -> None:
             try:
-                novel = build_novel_from_text(raw_text, title=title, author=author, fmt=fmt)
+                novel = build_novel_from_text(raw_text, title=title, author=author, fmt=fmt, config=self.config)
                 options = ConvertOptions(default_format=fmt)
                 screenplay, used_llm = convert_novel(novel, options=options, prefer_llm=prefer_llm)
                 yaml_out = dump_yaml(screenplay)

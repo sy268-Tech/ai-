@@ -31,6 +31,7 @@ def convert_command(args: argparse.Namespace) -> int:
             title=args.title or Path(args.input).stem,
             author=args.author or "",
             fmt=args.default_format,
+            config=LLMConfig.from_env(),
         )
     else:
         data = load_yaml_or_json(args.input)

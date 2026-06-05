@@ -73,6 +73,23 @@ class LLMSceneList(BaseModel):
     scenes: List[LLMScene] = Field(default_factory=list)
 
 
+class LLMChapterSegment(BaseModel):
+    """大模型识别出的单个章节/段落边界。"""
+
+    title: str = Field(description="章节标题，若原文无标题则自行根据内容概括一个简短标题")
+    start_line: int = Field(description="该章节在带行号文本中的起始行号（从1开始）")
+    end_line: int = Field(description="该章节在带行号文本中的结束行号（包含）")
+
+
+class LLMChapterSegmentList(BaseModel):
+    """大模型对整段文本的章节切分结果。"""
+
+    chapters: List[LLMChapterSegment] = Field(
+        default_factory=list,
+        description="按顺序排列的章节列表，每个章节标明起止行号",
+    )
+
+
 class LLMBeat(BaseModel):
     """大模型从一个场景中提炼出的单个剧本节拍 (beat)。"""
 

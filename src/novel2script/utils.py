@@ -22,7 +22,13 @@ def split_paragraphs(text: str) -> list[str]:
 def split_chapters(raw_text: str) -> list[dict[str, object]]:
     """把整段小说文本拆分成章节列表。
 
-    支持中文「第X章/节/回」、英文「Chapter N」标题；
+    支持多种章节标题格式：
+    - 中文：第X章/节/回/幕、场景X、片段X
+    - 英文：Chapter N、Part N、Scene N、Act N
+    - 编号式：Chat1、chat 2、ep1、EP01
+    - 纯数字序号行：独占一行的 "1." "2." "3."（后可跟标题）
+    - 分隔线：--- 或 === 独占一行（至少三个连续符号）
+
     若没有任何章节标题，则按连续空行粗略切分。
     返回形如 ``[{"chapter_number": 1, "title": "第一章 ...", "text": "..."}]``。
     """
@@ -30,34 +36,79 @@ def split_chapters(raw_text: str) -> list[dict[str, object]]:
     if not text:
         return []
 
-    pattern = re.compile(
-        r"(?m)^\s*("
-        r"(?:第\s*[0-9一二三四五六七八九十百千两]+\s*[章节回幕])"
-        r"|(?:Chapter\s+\d+)|(?:CHAPTER\s+\d+)"
-        r")\s*(.*)$"
-    )
-    matches = list(pattern.finditer(text))
+    # 按优先级尝试多种分割模式
+    patterns = [
+        # 中文章节：第X章/节/回/幕
+        re.compile(
+            r"(?m)^\s*(第\s*[0-9一二三四五六七八九十百千两]+\s*[章节回幕])\s*(.*)$"
+        ),
+        # 中文场景/片段/段落
+        re.compile(
+            r"(?m)^\s*((?:场景|片段|段落|篇章)\s*[0-9一二三四五六七八九十百千两]+)\s*(.*)$"
+        ),
+        # 英文 Chapter/Part/Scene/Act/Episode
+        re.compile(
+            r"(?mi)^\s*((?:Chapter|Part|Scene|Act|Episode)\s+\d+)\s*(.*)$"
+        ),
+        # Chat/chat/EP/ep 加数字（紧凑或空格分隔）
+        re.compile(
+            r"(?mi)^\s*((?:Chat|chat|EP|ep|Ep)\s*\d+)\s*(.*)$"
+        ),
+        # 纯数字序号行：1. / 2. / 3.（独占行首，后可跟标题文字）
+        re.compile(
+            r"(?m)^\s*(\d+)\.\s+(.+)$"
+        ),
+        # 分隔线模式：---、===、***（至少三个连续符号独占一行）
+        re.compile(
+            r"(?m)^(\s*[-=*]{3,})\s*()$"
+        ),
+    ]
 
     chapters: list[dict[str, object]] = []
-    if matches:
-        for idx, match in enumerate(matches):
-            start = match.end()
-            end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
-            title_prefix = match.group(1).strip()
-            title_rest = match.group(2).strip()
-            title = f"{title_prefix} {title_rest}".strip()
-            body = text[start:end].strip()
-            number = idx + 1
-            if body:
-                chapters.append(
-                    {"chapter_number": number, "title": title or f"第{number}章", "text": body}
-                )
-    else:
-        parts = [p.strip() for p in re.split(r"\n\s*\n\s*\n+", text) if p.strip()]
-        for idx, part in enumerate(parts, start=1):
-            chapters.append(
-                {"chapter_number": idx, "title": f"第{idx}章", "text": part}
-            )
+
+    for pat in patterns:
+        matches = list(pat.finditer(text))
+        if len(matches) >= 2:  # 至少匹配到两个才算有效分割
+            # 分隔线模式特殊处理：分隔线本身不作为标题
+            is_separator = pat.pattern.startswith(r"(?m)^(\s*[-=*]")
+            for idx, match in enumerate(matches):
+                start = match.end()
+                end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+                body = text[start:end].strip()
+                number = idx + 1
+
+                if is_separator:
+                    title = f"第{number}章"
+                else:
+                    title_prefix = match.group(1).strip()
+                    title_rest = match.group(2).strip()
+                    title = f"{title_prefix} {title_rest}".strip() if title_rest else title_prefix
+
+                if body:
+                    chapters.append(
+                        {"chapter_number": number, "title": title or f"第{number}章", "text": body}
+                    )
+
+            # 处理分隔线模式时，第一个分隔线之前的内容也应作为一章
+            if is_separator and matches:
+                first_body = text[: matches[0].start()].strip()
+                if first_body:
+                    # 插入到列表最前面，重新编号
+                    chapters.insert(0, {"chapter_number": 0, "title": "第0章", "text": first_body})
+                    for i, ch in enumerate(chapters):
+                        ch["chapter_number"] = i + 1
+                        if ch["title"].startswith("第") and ch["title"][-1] == "章":
+                            ch["title"] = f"第{i + 1}章"
+
+            if chapters:
+                return chapters
+
+    # 兜底：按连续空行切分
+    parts = [p.strip() for p in re.split(r"\n\s*\n\s*\n+", text) if p.strip()]
+    for idx, part in enumerate(parts, start=1):
+        chapters.append(
+            {"chapter_number": idx, "title": f"第{idx}章", "text": part}
+        )
 
     return chapters
 
@@ -147,3 +198,103 @@ def summarize_text(text: str, max_len: int = 80) -> str:
     if len(clean) <= max_len:
         return clean
     return clean[: max_len - 1] + "…"
+
+
+def split_chapters_with_llm(raw_text: str, config=None) -> list[dict[str, object]]:
+    """当正则无法识别章节时，调用大模型智能切分文本。
+
+    大模型会根据叙事节奏、时间跳跃、场景转换等语义信息来判断章节边界，
+    从而支持任意用户自定义的分割方式。
+
+    参数:
+        raw_text: 原始小说文本
+        config: LLMConfig 实例，为 None 时从环境变量读取
+
+    返回:
+        与 split_chapters 相同格式的章节列表，失败时返回空列表。
+    """
+    from .config import LLMConfig
+
+    cfg = config or LLMConfig.from_env()
+    if not cfg.is_configured:
+        return []
+
+    text = raw_text.strip()
+    if not text:
+        return []
+
+    # 为文本加上行号，方便大模型标注边界
+    lines = text.split("\n")
+    numbered_text = "\n".join(f"[{i + 1}] {line}" for i, line in enumerate(lines))
+
+    # 截断过长文本，避免超出 token 上限
+    max_chars = cfg.max_chars_per_chapter * 5  # 允许更大范围
+    if len(numbered_text) > max_chars:
+        numbered_text = numbered_text[:max_chars] + "\n…（后续内容已截断）"
+
+    try:
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_openai import ChatOpenAI
+
+        from .llm_schemas import LLMChapterSegmentList
+
+        llm = ChatOpenAI(
+            api_key=cfg.api_key,
+            base_url=cfg.base_url,
+            model=cfg.model,
+            temperature=0.2,
+            max_tokens=cfg.max_tokens,
+            timeout=60,
+            max_retries=1,
+        )
+        structured_llm = llm.with_structured_output(
+            LLMChapterSegmentList, method="function_calling"
+        )
+
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", _LLM_SPLIT_SYSTEM),
+            ("human", _LLM_SPLIT_USER),
+        ])
+        chain = prompt | structured_llm
+        result: LLMChapterSegmentList = chain.invoke(
+            {"numbered_text": numbered_text, "total_lines": len(lines)}
+        )
+
+        chapters: list[dict[str, object]] = []
+        for idx, seg in enumerate(result.chapters, start=1):
+            start = max(1, seg.start_line) - 1  # 转为 0-based index
+            end = min(seg.end_line, len(lines))  # 包含 end_line
+            body = "\n".join(lines[start:end]).strip()
+            if body:
+                chapters.append({
+                    "chapter_number": idx,
+                    "title": seg.title.strip() or f"第{idx}章",
+                    "text": body,
+                })
+
+        return chapters
+
+    except Exception:
+        return []
+
+
+_LLM_SPLIT_SYSTEM = (
+    "你是一位专业的文本结构分析师。你的任务是把一段小说/故事文本切分成多个章节或段落。"
+    "判断依据包括但不限于：时间跳跃、地点转换、视角变化、情节转折、"
+    "任何形式的分隔标记（空行、符号、编号等）。"
+    "即使原文没有明确的章节标题，也请根据叙事节奏合理切分，每个章节应是一个相对完整的叙事单元。"
+    "切分结果至少 3 个章节。"
+)
+
+_LLM_SPLIT_USER = """请分析以下带行号的文本，将其切分为多个章节。
+
+要求：
+1. 每个章节标注起始行号和结束行号（行号从1开始）。
+2. 为每个章节起一个简短标题（概括该段内容）。
+3. 章节之间不要有遗漏（所有行都应被覆盖）。
+4. 切分结果至少 3 个章节，除非文本确实很短。
+5. 总行数为 {total_lines} 行。
+
+带行号的文本：
+{numbered_text}
+"""

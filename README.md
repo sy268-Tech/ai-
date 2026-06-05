@@ -3,6 +3,20 @@
 **AI 小说转剧本工具** —— 将 3 个章节以上的小说文本自动转换为结构化剧本（YAML 格式），
 标注角色、对话和环境，让作者可以快速获得可编辑、可进一步打磨的剧本初稿。
 
+## 演示视频
+
+https://github.com/user-attachments/assets/YOUR_VIDEO_ID
+
+<!-- 上传方法：
+  1. 在 GitHub 仓库页面点击 Issues → New Issue
+  2. 将视频文件拖拽到编辑框中，等待上传完成
+  3. 复制生成的链接（格式如 https://github.com/user-attachments/assets/xxx）
+  4. 替换上方的链接即可，视频会直接嵌入显示
+  
+  支持格式：MP4、MOV（建议 MP4，兼容性最好）
+  大小限制：GitHub 支持最大 10MB 直接上传，更大的用 Release 附件
+-->
+
 ## 核心特性
 
 | 功能 | 说明 |
