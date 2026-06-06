@@ -5,7 +5,7 @@
 
 ## 演示视频
 
-https://github.com/user-attachments/assets/YOUR_VIDEO_ID
+https://pan.baidu.com/s/1wbA---xA8CUNpKiWWuc3IA?pwd=1234
 
 <!-- 上传方法：
   1. 在 GitHub 仓库页面点击 Issues → New Issue

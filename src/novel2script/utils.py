@@ -120,7 +120,37 @@ def chunk_list(items: list[str], size: int) -> list[list[str]]:
 
 
 def looks_like_dialogue(text: str) -> bool:
-    return bool(re.search(r"[“\"].+?[”\"]", text)) or "：" in text or ":" in text
+    """判断一段文本是否像是对白。
+
+    会排除明确不是对白的情况，例如：
+    - 「照片背面写着：xxx」—— 这是书面文字，不是口头对白
+    - 「信上写着：xxx」—— 同上
+    """
+    # 排除书面/标记类冒号（写着、写道、标记等后面跟冒号）
+    _WRITTEN_COLON = re.compile(
+        r"(?:"
+        r"写着|写道|写的是|上面写|背面写|信上写|纸上写|页上写"
+        r"|标注|标记|标签|印着|刻着|题字|落款"
+        r")\s*[:：]"
+    )
+    if _WRITTEN_COLON.search(text):
+        # 如果文本中有书面标记跟着冒号→不是对白
+        # 但要检查是否整段都是书面标记（文本中没有说/问/道等对白动词）
+        if not re.search(r"(?:说|问|道|喊|叫|答|骂|哭|笑|喊|嚷|吼)[:：]", text):
+            return False
+
+    # 有引号包裹的内容 → 大概率是对白
+    if bool(re.search(r"[「『“\"].+?[」』”\"]", text)):
+        # 但如果引号前面是「写着」等书面动词，且整句没有对白动词，仍视为书面文本
+        if _WRITTEN_COLON.search(text):
+            return False
+        return True
+
+    # 有冒号 → 可能是对白
+    if "：" in text or ":" in text:
+        return True
+
+    return False
 
 
 def extract_dialogue_text(text: str) -> list[str]:

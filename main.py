@@ -1,5 +1,5 @@
 """
-Novel2Script AI - 图形界面入口（PyCharm 右键 Run 即可）
+Novel2Script AI - 图形界面入口
 
 功能：
 1. 粘贴 / 打开小说文本（支持单章或多章）。
@@ -29,7 +29,7 @@ if SRC.exists() and str(SRC) not in sys.path:
 
 from novel2script.config import LLMConfig
 from novel2script.models import ConvertOptions
-from novel2script.service import build_novel_from_text, convert_novel, extend_screenplay
+from novel2script.service import build_novel_from_text, convert_novel, extend_screenplay, _try_parse_structured_text
 from novel2script.renderer import render_readable_script
 from novel2script.yaml_io import dump_yaml
 
@@ -164,6 +164,9 @@ class Novel2ScriptApp:
 
         self.config = LLMConfig.from_env()
         self.last_screenplay: dict | None = None
+        self._cancel_event: threading.Event | None = None
+        self._cancel_btn: RoundedButton | None = None
+        self._generation_id: int = 0  # 递增 ID，用于忽略已取消/旧生成的回调
 
         self.title_var = tk.StringVar(value="雾城来信")
         self.author_var = tk.StringVar(value="示例作者")
@@ -262,6 +265,12 @@ class Novel2ScriptApp:
             font_size=10,
         )
         self.extend_btn.pack(side=tk.LEFT, padx=4)
+        self._cancel_btn = RoundedButton(
+            btn_frame, text="✕ 取消生成", command=self.cancel_generation,
+            width=100, height=34, bg=Colors.DANGER, hover_bg="#dc2626",
+            font_size=10,
+        )
+        # 取消按钮初始隐藏
         RoundedButton(btn_frame, text="保存 YAML", command=self.save_yaml,
                       width=100, height=32, bg=Colors.SUCCESS, hover_bg="#059669",
                       font_size=9).pack(side=tk.LEFT, padx=4)
@@ -343,6 +352,9 @@ class Novel2ScriptApp:
         self.tabs.add(self.readable_text, text="  📄 可读剧本（角色 / 对话 / 环境）  ")
         self.tabs.add(self.yaml_text, text="  📋 结构化 YAML  ")
 
+        # ── 配置可读剧本的颜色标签 ──────────────────────────
+        self._setup_readable_tags()
+
         # 底部状态栏
         bottom = tk.Frame(self.root, bg=Colors.BG, padx=16, pady=6)
         bottom.pack(fill=tk.X)
@@ -380,6 +392,70 @@ class Novel2ScriptApp:
         else:
             self.engine_badge.set_status("规则引擎模式（离线，无需联网）", Colors.TEXT_LIGHT)
 
+    def _setup_readable_tags(self) -> None:
+        """配置可读剧本的颜色标签（角色/对白/场景/环境等）。"""
+        tags_config = {
+            "scene_header":    {"foreground": "#7c3aed", "font": ("Microsoft YaHei UI", 11, "bold")},   # 场景标题 ◇
+            "environment":     {"foreground": "#d97706"},                                                # 环境描述 【环境】
+            "character":       {"foreground": "#2563eb"},                                                # 角色 【角色】●
+            "dialogue":        {"foreground": "#059669"},                                                # 对白 【对话】
+            "action_beat":     {"foreground": "#6b7280"},                                                # 动作/旁白/音效
+            "location":        {"foreground": "#0891b2"},                                                # 地点 ◆
+            "transition":      {"foreground": "#dc2626"},                                                # 转场
+            "title_line":      {"foreground": "#1e293b", "font": ("Microsoft YaHei UI", 10, "bold")},    # 标题/分隔线
+            "section_header":  {"foreground": "#4a6cf7", "font": ("Microsoft YaHei UI", 10, "bold")},    # 【角色表】【地点表】【正文】
+            "meta_info":       {"foreground": "#64748b"},                                                # 元信息（一句话故事等）
+        }
+        for tag_name, cfg in tags_config.items():
+            self.readable_text.tag_configure(tag_name, **cfg)
+
+    def _apply_readable_colors(self) -> None:
+        """扫描可读剧本内容，按行类型应用颜色标签。"""
+        text_widget = self.readable_text
+        content = text_widget.get("1.0", tk.END)
+        lines = content.split("\n")
+
+        for i, line in enumerate(lines):
+            ln = f"{i + 1}.0"
+            le = f"{i + 1}.end"
+
+            # 场景标题行：◇ 第N场 ...
+            if line.startswith("◇"):
+                text_widget.tag_add("scene_header", ln, le)
+            # 环境标注
+            elif "【环境】" in line:
+                text_widget.tag_add("environment", ln, le)
+            # 对话行
+            elif "【对话】" in line:
+                text_widget.tag_add("dialogue", ln, le)
+            # 角色在场
+            elif "【角色】" in line:
+                text_widget.tag_add("character", ln, le)
+            # 转场
+            elif "〔转场" in line:
+                text_widget.tag_add("transition", ln, le)
+            # 动作/旁白/音效/画面/停顿/插入
+            elif any(f"（{t}）" in line for t in ("动作", "旁白", "音效", "画面", "停顿", "插入")):
+                text_widget.tag_add("action_beat", ln, le)
+            # 地点表条目
+            elif line.startswith("◆"):
+                text_widget.tag_add("location", ln, le)
+            # 章节标题：【角色表】【地点表】【正文】
+            elif line.strip() in ("【角色表】", "【地点表】") or line.strip().startswith("【正文】"):
+                text_widget.tag_add("section_header", ln, le)
+            # 分隔线
+            elif line.strip().startswith("══") or line.strip().startswith("──"):
+                text_widget.tag_add("title_line", ln, le)
+            # 标题行（以空格缩进 + 《开头的书名）
+            elif "《" in line and "》" in line and ("剧本初稿" in line or "剧本" in line):
+                text_widget.tag_add("title_line", ln, le)
+            # 元信息
+            elif line.startswith("一句话故事：") or line.startswith("剧情梗概：") or line.startswith("改编自"):
+                text_widget.tag_add("meta_info", ln, le)
+            # 角色表条目 ●
+            elif line.strip().startswith("●"):
+                text_widget.tag_add("character", ln, le)
+
     def load_example(self) -> None:
         self.input_text.delete("1.0", tk.END)
         self.input_text.insert("1.0", EXAMPLE_TEXT)
@@ -398,6 +474,14 @@ class Novel2ScriptApp:
             text = Path(path).read_text(encoding="gbk", errors="ignore")
         self.input_text.delete("1.0", tk.END)
         self.input_text.insert("1.0", text)
+
+        # 如果文件是结构化 YAML，自动提取标题和作者
+        _, meta = _try_parse_structured_text(text)
+        if meta.get("title"):
+            self.title_var.set(meta["title"])
+        if meta.get("author"):
+            self.author_var.set(meta["author"])
+
         self.status_var.set(f"已打开：{Path(path).name}")
 
     def convert(self) -> None:
@@ -407,22 +491,52 @@ class Novel2ScriptApp:
         fmt = self.format_var.get().strip() or "web_series"
         prefer_llm = self.use_llm_var.get()
 
+        # 从结构化 YAML 中提取元数据，自动同步标题/作者到 GUI
+        _, yaml_meta = _try_parse_structured_text(raw_text)
+        if yaml_meta.get("title"):
+            title = yaml_meta["title"]
+            self.root.after(0, lambda t=title: self.title_var.set(t))
+        if yaml_meta.get("author"):
+            author = yaml_meta["author"]
+            self.root.after(0, lambda a=author: self.author_var.set(a))
+        if yaml_meta.get("format"):
+            fmt = yaml_meta["format"]
+
+        # 取消上一次未完成的生成，并递增代际 ID 使旧回调失效
+        if self._cancel_event is not None:
+            self._cancel_event.set()
+        self._generation_id += 1
+        gen_id = self._generation_id
+
+        self._cancel_event = threading.Event()
         self.convert_btn.set_disabled(True)
+        self._cancel_btn.pack(side=tk.LEFT, padx=4)
         engine = "大模型" if (prefer_llm and self.config.is_configured) else "规则引擎"
-        self.status_var.set(f"⏳ 正在用{engine}生成剧本，请稍候…")
+        self.status_var.set(f"⏳ 正在用{engine}生成剧本，请稍候…（可点击「取消生成」）")
         self.progress.pack(fill=tk.X, padx=12, pady=(0, 4))
         self.progress.start(15)
+
+        cancel_ev = self._cancel_event  # 捕获引用，避免后续覆盖影响本线程
 
         def worker() -> None:
             try:
                 novel = build_novel_from_text(raw_text, title=title, author=author, fmt=fmt, config=self.config)
                 options = ConvertOptions(default_format=fmt)
                 screenplay, used_llm = convert_novel(novel, options=options, prefer_llm=prefer_llm)
+                if cancel_ev.is_set():
+                    self.root.after(0, self._on_cancel, gen_id)
+                    return
                 yaml_out = dump_yaml(screenplay)
                 readable = render_readable_script(screenplay)
-                self.root.after(0, self._on_success, screenplay, yaml_out, readable, used_llm)
+                if cancel_ev.is_set():
+                    self.root.after(0, self._on_cancel, gen_id)
+                    return
+                self.root.after(0, self._on_success, screenplay, yaml_out, readable, used_llm, gen_id)
             except Exception as exc:
-                self.root.after(0, self._on_error, exc)
+                if cancel_ev.is_set():
+                    self.root.after(0, self._on_cancel, gen_id)
+                    return
+                self.root.after(0, self._on_error, exc, gen_id)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -437,16 +551,26 @@ class Novel2ScriptApp:
             messagebox.showwarning("文本为空", "请在输入区粘贴续写内容，然后点击「续写剧本」。")
             return
 
+        # 取消上一次未完成的操作，并递增代际 ID 使旧回调失效
+        if self._cancel_event is not None:
+            self._cancel_event.set()
+        self._generation_id += 1
+        gen_id = self._generation_id
+
         prefer_llm = bool(self.use_llm_var.get() and self.config.is_configured)
+        self._cancel_event = threading.Event()
         engine = "大模型续写" if prefer_llm else "规则引擎续写"
-        self.status_var.set(f"⏳ 正在用{engine}续写剧本，请稍候…")
+        self.status_var.set(f"⏳ 正在用{engine}续写剧本，请稍候…（可点击「取消生成」）")
         self.progress.pack(fill=tk.X, padx=12, pady=(0, 4))
         self.progress.start(15)
         self.convert_btn.set_disabled(True)
         self.extend_btn.set_disabled(True)
+        self._cancel_btn.pack(side=tk.LEFT, padx=4)
 
         old_scene_count = len(self.last_screenplay.get("script", {}).get("scenes", []))
         old_char_count = len(self.last_screenplay.get("script", {}).get("characters", []))
+
+        cancel_ev = self._cancel_event  # 捕获引用
 
         def worker() -> None:
             try:
@@ -457,27 +581,41 @@ class Novel2ScriptApp:
                     prefer_llm=prefer_llm,
                     options=options,
                 )
+                if cancel_ev.is_set():
+                    self.root.after(0, self._on_cancel, gen_id)
+                    return
                 yaml_out = dump_yaml(screenplay)
                 readable = render_readable_script(screenplay)
+                if cancel_ev.is_set():
+                    self.root.after(0, self._on_cancel, gen_id)
+                    return
                 self.root.after(
                     0, self._on_extend_success,
                     screenplay, yaml_out, readable, used_llm,
-                    old_scene_count, old_char_count,
+                    old_scene_count, old_char_count, gen_id,
                 )
             except Exception as exc:
-                self.root.after(0, self._on_error, exc)
+                if cancel_ev.is_set():
+                    self.root.after(0, self._on_cancel, gen_id)
+                    return
+                self.root.after(0, self._on_error, exc, gen_id)
 
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_extend_success(
         self, screenplay: dict, yaml_out: str, readable: str,
         used_llm: bool, old_scene_count: int, old_char_count: int,
+        gen_id: int = 0,
     ) -> None:
+        if gen_id != self._generation_id:
+            return  # 已被取消或有更新的生成，丢弃过期结果
         self.progress.stop()
         self.progress.pack_forget()
+        self._cancel_btn.pack_forget()
         self.last_screenplay = screenplay
         self.readable_text.delete("1.0", tk.END)
         self.readable_text.insert("1.0", readable)
+        self._apply_readable_colors()
         self.yaml_text.delete("1.0", tk.END)
         self.yaml_text.insert("1.0", yaml_out)
         self.tabs.select(0)
@@ -497,12 +635,17 @@ class Novel2ScriptApp:
         note += "）"
         self.status_var.set(f"✅ 续写完成 · {engine}{note} · 现共 {scene_count} 个场景")
 
-    def _on_success(self, screenplay: dict, yaml_out: str, readable: str, used_llm: bool) -> None:
+    def _on_success(self, screenplay: dict, yaml_out: str, readable: str, used_llm: bool,
+                    gen_id: int = 0) -> None:
+        if gen_id != self._generation_id:
+            return  # 已被取消或有更新的生成，丢弃过期结果
         self.progress.stop()
         self.progress.pack_forget()
+        self._cancel_btn.pack_forget()
         self.last_screenplay = screenplay
         self.readable_text.delete("1.0", tk.END)
         self.readable_text.insert("1.0", readable)
+        self._apply_readable_colors()
         self.yaml_text.delete("1.0", tk.END)
         self.yaml_text.insert("1.0", yaml_out)
         self.tabs.select(0)
@@ -516,13 +659,39 @@ class Novel2ScriptApp:
         note = "" if used_llm or not self.use_llm_var.get() else "（大模型不可用，已回退）"
         self.status_var.set(f"✅ 生成完成 · {engine}{note} · {scene_count} 个场景 · 可保存输出")
 
-    def _on_error(self, exc: Exception) -> None:
+    def _on_error(self, exc: Exception, gen_id: int = 0) -> None:
+        if gen_id != self._generation_id:
+            return  # 已被取消或有更新的生成，忽略过期错误
         self.progress.stop()
         self.progress.pack_forget()
+        self._cancel_btn.pack_forget()
         self.convert_btn.set_disabled(False)
         self.extend_btn.set_disabled(False)
         messagebox.showerror("生成失败", str(exc))
         self.status_var.set(f"❌ 生成失败：{exc}")
+
+    def cancel_generation(self) -> None:
+        """用户点击取消生成按钮——立即恢复 UI，不等待 worker 线程。"""
+        if self._cancel_event is not None:
+            self._cancel_event.set()
+        # 立即在主线程恢复 UI，不等待 worker 线程（LLM 调用可能很久才返回）
+        self.progress.stop()
+        self.progress.pack_forget()
+        self._cancel_btn.pack_forget()
+        self.convert_btn.set_disabled(False)
+        self.extend_btn.set_disabled(False)
+        self.status_var.set("⏹ 已取消生成 · 可以重新开始")
+
+    def _on_cancel(self, gen_id: int) -> None:
+        """Worker 线程检测到取消后的回调——仅在仍是最新生成时才做 UI 清理。"""
+        if gen_id != self._generation_id:
+            return  # 已被更新的生成覆盖，忽略
+        self.progress.stop()
+        self.progress.pack_forget()
+        self._cancel_btn.pack_forget()
+        self.convert_btn.set_disabled(False)
+        self.extend_btn.set_disabled(False)
+        self.status_var.set("⏹ 已取消生成 · 可以重新开始")
 
     def save_yaml(self) -> None:
         text = self.yaml_text.get("1.0", tk.END).strip()
